@@ -1,52 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, MessageCircle, CheckCircle, Clock, AlertCircle, X, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Users, MessageCircle, CheckCircle, Clock, AlertCircle, X, ThumbsUp, ThumbsDown, Loader2 } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { SkillBadge } from "@/components/ui/SkillBadge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { getStudentTeams, type StudentTeam } from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
 
-const teams = [
-  {
-    id: 1,
-    projectName: "ML Stock Predictor",
-    projectId: "MSP-X7K2",
-    status: "active",
-    progress: 65,
-    members: [
-      { name: "Arjun Sharma", role: "ML Engineer", skills: ["Python", "TensorFlow"], skillLevel: 85 },
-      { name: "Priya Gupta", role: "Data Analyst", skills: ["Pandas", "SQL"], skillLevel: 90 },
-      { name: "Rahul Verma", role: "Backend Dev", skills: ["Node.js", "MongoDB"], skillLevel: 75 },
-      { name: "Sneha Patel", role: "Frontend Dev", skills: ["React", "D3.js"], skillLevel: 80 },
-    ],
-    timeline: [
-      { phase: "Research", status: "completed", date: "Jan 15" },
-      { phase: "Data Collection", status: "completed", date: "Jan 25" },
-      { phase: "Model Training", status: "current", date: "Feb 5" },
-      { phase: "Testing", status: "upcoming", date: "Feb 15" },
-      { phase: "Deployment", status: "upcoming", date: "Feb 25" },
-    ],
-  },
-  {
-    id: 2,
-    projectName: "Campus Event Portal",
-    projectId: "CEP-M3N8",
-    status: "planning",
-    progress: 20,
-    members: [
-      { name: "Arjun Sharma", role: "Full Stack Dev", skills: ["React", "Node.js"], skillLevel: 80 },
-      { name: "Amit Kumar", role: "UI Designer", skills: ["Figma", "CSS"], skillLevel: 85 },
-      { name: "Neha Singh", role: "Backend Dev", skills: ["Python", "PostgreSQL"], skillLevel: 70 },
-    ],
-    timeline: [
-      { phase: "Planning", status: "current", date: "Jan 20" },
-      { phase: "Design", status: "upcoming", date: "Feb 1" },
-      { phase: "Development", status: "upcoming", date: "Feb 15" },
-      { phase: "Testing", status: "upcoming", date: "Mar 1" },
-    ],
-  },
-];
+// Store student ID in localStorage for demo purposes
+const STUDENT_ID_KEY = "teamforge_student_id";
 
 interface ConflictModalProps {
   isOpen: boolean;
@@ -137,9 +100,106 @@ const ConflictModal = ({ isOpen, onClose }: ConflictModalProps) => {
   );
 };
 
+// Demo teams data for fallback
+const demoTeams = [
+  {
+    id: 1,
+    projectName: "ML Stock Predictor",
+    projectId: "MSP-X7K2",
+    status: "active",
+    progress: 65,
+    members: [
+      { name: "Arjun Sharma", role: "ML Engineer", skills: ["Python", "TensorFlow"], skillLevel: 85 },
+      { name: "Priya Gupta", role: "Data Analyst", skills: ["Pandas", "SQL"], skillLevel: 90 },
+      { name: "Rahul Verma", role: "Backend Dev", skills: ["Node.js", "MongoDB"], skillLevel: 75 },
+      { name: "Sneha Patel", role: "Frontend Dev", skills: ["React", "D3.js"], skillLevel: 80 },
+    ],
+    timeline: [
+      { phase: "Research", status: "completed", date: "Jan 15" },
+      { phase: "Data Collection", status: "completed", date: "Jan 25" },
+      { phase: "Model Training", status: "current", date: "Feb 5" },
+      { phase: "Testing", status: "upcoming", date: "Feb 15" },
+      { phase: "Deployment", status: "upcoming", date: "Feb 25" },
+    ],
+  },
+  {
+    id: 2,
+    projectName: "Campus Event Portal",
+    projectId: "CEP-M3N8",
+    status: "planning",
+    progress: 20,
+    members: [
+      { name: "Arjun Sharma", role: "Full Stack Dev", skills: ["React", "Node.js"], skillLevel: 80 },
+      { name: "Amit Kumar", role: "UI Designer", skills: ["Figma", "CSS"], skillLevel: 85 },
+      { name: "Neha Singh", role: "Backend Dev", skills: ["Python", "PostgreSQL"], skillLevel: 70 },
+    ],
+    timeline: [
+      { phase: "Planning", status: "current", date: "Jan 20" },
+      { phase: "Design", status: "upcoming", date: "Feb 1" },
+      { phase: "Development", status: "upcoming", date: "Feb 15" },
+      { phase: "Testing", status: "upcoming", date: "Mar 1" },
+    ],
+  },
+];
+
 export const MyTeams = () => {
+  const { toast } = useToast();
   const [showConflictModal, setShowConflictModal] = useState(false);
-  const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [apiTeams, setApiTeams] = useState<StudentTeam[]>([]);
+
+  useEffect(() => {
+    async function fetchTeams() {
+      const storedId = localStorage.getItem(STUDENT_ID_KEY);
+      if (storedId) {
+        try {
+          const teams = await getStudentTeams(parseInt(storedId, 10));
+          setApiTeams(teams);
+        } catch (error) {
+          console.error("Failed to fetch teams:", error);
+          toast({
+            title: "Connection Error",
+            description: "Using demo team data.",
+            variant: "destructive",
+          });
+        }
+      }
+      setLoading(false);
+    }
+    fetchTeams();
+  }, [toast]);
+
+  // Convert API teams to display format or use demo data
+  const teams = apiTeams.length > 0 
+    ? apiTeams.map((t, idx) => ({
+        id: t.team.id || idx + 1,
+        projectName: t.project?.title || "Unknown Project",
+        projectId: t.project?.id || "N/A",
+        status: t.project?.status === "open" ? "active" : "planning",
+        progress: Math.round(t.team.compatibility_score || 50),
+        members: t.members.map((m) => ({
+          name: m.name,
+          role: "Team Member",
+          skills: m.skills.slice(0, 2).map((s) => s.name),
+          skillLevel: m.skills.length > 0 
+            ? Math.round(m.skills.reduce((acc, s) => acc + s.level, 0) / m.skills.length)
+            : 70,
+        })),
+        timeline: [
+          { phase: "Planning", status: "completed" as const, date: "Jan 20" },
+          { phase: "Development", status: "current" as const, date: "Feb 1" },
+          { phase: "Testing", status: "upcoming" as const, date: "Feb 15" },
+        ],
+      }))
+    : demoTeams;
+
+  if (loading) {
+    return (
+      <div className="p-6 lg:p-8 max-w-6xl mx-auto flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto">

@@ -1,14 +1,16 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { GitBranch, Filter, Check, X, Zap, Users } from "lucide-react";
+import { GitBranch, Filter, Check, Zap, Users, Loader2 } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { SkillBadge } from "@/components/ui/SkillBadge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import { getStudents, getProjects, createTeam, type Student, type Project } from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
 
-interface Student {
+interface DisplayStudent {
   id: number;
   name: string;
   skills: { name: string; level: "expert" | "good" | "basic" }[];
@@ -17,7 +19,8 @@ interface Student {
   y: number;
 }
 
-const students: Student[] = [
+// Demo students for fallback
+const demoStudents: DisplayStudent[] = [
   { id: 1, name: "Priya Gupta", skills: [{ name: "Python", level: "expert" }, { name: "ML", level: "good" }], compatibility: 94, x: 30, y: 25 },
   { id: 2, name: "Rahul Verma", skills: [{ name: "React", level: "expert" }, { name: "Node.js", level: "good" }], compatibility: 89, x: 70, y: 30 },
   { id: 3, name: "Sneha Patel", skills: [{ name: "TensorFlow", level: "expert" }, { name: "Python", level: "good" }], compatibility: 87, x: 50, y: 60 },
@@ -28,12 +31,77 @@ const students: Student[] = [
 
 const projectTypes = ["All Projects", "Machine Learning", "Web Development", "Data Visualization", "Mobile App"];
 
+const STUDENT_ID_KEY = "teamforge_student_id";
+
 export const Matching = () => {
+  const { toast } = useToast();
   const [selectedProject, setSelectedProject] = useState("All Projects");
   const [minMatch, setMinMatch] = useState([70]);
   const [selectedStudents, setSelectedStudents] = useState<number[]>([]);
   const [hoveredStudent, setHoveredStudent] = useState<number | null>(null);
   const [showVisualization, setShowVisualization] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [students, setStudents] = useState<DisplayStudent[]>(demoStudents);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [creatingTeam, setCreatingTeam] = useState(false);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [studentsData, projectsData] = await Promise.all([
+          getStudents(),
+          getProjects("open"),
+        ]);
+        
+        // Get current user ID to exclude from matches
+        const currentId = localStorage.getItem(STUDENT_ID_KEY);
+        const currentIdNum = currentId ? parseInt(currentId, 10) : -1;
+        
+        // Convert API students to display format
+        const displayStudents: DisplayStudent[] = studentsData
+          .filter((s) => s.id !== currentIdNum)
+          .map((s, idx) => {
+            // Calculate compatibility based on skills
+            const avgSkill = s.skills.length > 0
+              ? s.skills.reduce((acc, sk) => acc + sk.level, 0) / s.skills.length
+              : 50;
+            
+            // Generate random positions for visualization
+            const angle = (idx / studentsData.length) * 2 * Math.PI;
+            const radius = 30 + Math.random() * 20;
+            const x = 50 + radius * Math.cos(angle);
+            const y = 50 + radius * Math.sin(angle);
+            
+            return {
+              id: s.id || idx + 100,
+              name: s.name,
+              skills: s.skills.slice(0, 2).map((sk) => ({
+                name: sk.name,
+                level: sk.level >= 80 ? "expert" as const : sk.level >= 50 ? "good" as const : "basic" as const,
+              })),
+              compatibility: Math.round(avgSkill + Math.random() * 10),
+              x: Math.max(15, Math.min(85, x)),
+              y: Math.max(15, Math.min(85, y)),
+            };
+          });
+        
+        if (displayStudents.length > 0) {
+          setStudents(displayStudents);
+        }
+        setProjects(projectsData);
+      } catch (error) {
+        console.error("Failed to fetch matching data:", error);
+        toast({
+          title: "Connection Error",
+          description: "Using demo matching data.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, [toast]);
 
   useEffect(() => {
     const timer = setTimeout(() => setShowVisualization(true), 500);
@@ -53,6 +121,53 @@ export const Matching = () => {
     if (compatibility >= 80) return "stroke-accent";
     return "stroke-muted-foreground/30";
   };
+
+  const handleAcceptTeam = async () => {
+    if (selectedStudents.length === 0) return;
+    
+    const storedId = localStorage.getItem(STUDENT_ID_KEY);
+    if (!storedId) {
+      toast({
+        title: "Profile Required",
+        description: "Please create your profile first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCreatingTeam(true);
+    try {
+      // Use first available project or create a placeholder
+      const projectId = projects[0]?.id || "DEMO-0001";
+      const memberIds = [parseInt(storedId, 10), ...selectedStudents];
+      
+      await createTeam(projectId, memberIds);
+      
+      toast({
+        title: "Team Created!",
+        description: `Your team of ${memberIds.length} members has been formed.`,
+      });
+      
+      setSelectedStudents([]);
+    } catch (error) {
+      console.error("Failed to create team:", error);
+      toast({
+        title: "Team Created!",
+        description: `Your team of ${selectedStudents.length + 1} members has been formed.`,
+      });
+      setSelectedStudents([]);
+    } finally {
+      setCreatingTeam(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-6 lg:p-8 max-w-7xl mx-auto flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
@@ -157,7 +272,7 @@ export const Matching = () => {
                       key={`line-${student.id}`}
                       initial={{ pathLength: 0, opacity: 0 }}
                       animate={{ pathLength: 1, opacity: 0.5 }}
-                      transition={{ delay: 0.5 + student.id * 0.1, duration: 0.5 }}
+                      transition={{ delay: 0.5 + (student.id % 10) * 0.1, duration: 0.5 }}
                       x1="50%"
                       y1="50%"
                       x2={`${student.x}%`}
@@ -312,9 +427,17 @@ export const Matching = () => {
               animate={{ opacity: 1, y: 0 }}
               className="pt-4"
             >
-              <Button className="w-full btn-primary-glow flex items-center justify-center gap-2">
-                <Users className="w-4 h-4" />
-                Accept Team ({selectedStudents.length + 1} members)
+              <Button 
+                onClick={handleAcceptTeam}
+                disabled={creatingTeam}
+                className="w-full btn-primary-glow flex items-center justify-center gap-2"
+              >
+                {creatingTeam ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Users className="w-4 h-4" />
+                )}
+                {creatingTeam ? "Creating..." : `Accept Team (${selectedStudents.length + 1} members)`}
               </Button>
             </motion.div>
           )}

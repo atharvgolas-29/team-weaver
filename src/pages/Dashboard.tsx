@@ -1,48 +1,101 @@
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Users, FolderOpen, GitMerge, TrendingUp, ArrowRight, ChevronRight } from "lucide-react";
+import { Users, FolderOpen, GitMerge, TrendingUp, ArrowRight, ChevronRight, Loader2 } from "lucide-react";
 import { StatCard } from "@/components/ui/StatCard";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { SkillBadge } from "@/components/ui/SkillBadge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-
-const featuredProjects = [
-  {
-    id: 1,
-    title: "ML Stock Predictor",
-    description: "Build a machine learning model to predict stock prices using LSTM networks",
-    skills: ["Python", "TensorFlow", "Pandas"],
-    teamSize: 4,
-    deadline: "Feb 15, 2026",
-    spots: 2,
-  },
-  {
-    id: 2,
-    title: "Campus Event Portal",
-    description: "Full-stack web app for managing university events with real-time notifications",
-    skills: ["React", "Node.js", "MongoDB"],
-    teamSize: 5,
-    deadline: "Mar 1, 2026",
-    spots: 3,
-  },
-  {
-    id: 3,
-    title: "Data Visualization Dashboard",
-    description: "Interactive dashboard for visualizing COVID-19 data trends across regions",
-    skills: ["D3.js", "SQL", "Python"],
-    teamSize: 3,
-    deadline: "Feb 28, 2026",
-    spots: 1,
-  },
-];
-
-const recentMatches = [
-  { name: "Priya Gupta", skill: "Python Expert", compatibility: 94 },
-  { name: "Rahul Verma", skill: "React Developer", compatibility: 89 },
-  { name: "Sneha Patel", skill: "ML Specialist", compatibility: 87 },
-];
+import { getStats, getProjects, getStudents, type Stats, type Project, type Student } from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
 
 export const Dashboard = () => {
+  const { toast } = useToast();
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [statsData, projectsData, studentsData] = await Promise.all([
+          getStats(),
+          getProjects("open"),
+          getStudents(),
+        ]);
+        setStats(statsData);
+        setProjects(projectsData.slice(0, 3)); // Show top 3 featured
+        setStudents(studentsData.slice(0, 3)); // Show top 3 recent matches
+      } catch (error) {
+        console.error("Failed to fetch dashboard data:", error);
+        toast({
+          title: "Connection Error",
+          description: "Unable to connect to backend. Using demo data.",
+          variant: "destructive",
+        });
+        // Fallback to demo data
+        setStats({
+          total_students: 245,
+          active_projects: 12,
+          total_teams: 156,
+          total_matches: 156,
+          avg_team_compatibility: 94,
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, [toast]);
+
+  // Fallback demo projects if API returns empty
+  const displayProjects = projects.length > 0 ? projects : [
+    {
+      id: "MSP-X7K2",
+      title: "ML Stock Predictor",
+      description: "Build a machine learning model to predict stock prices using LSTM networks",
+      required_skills: ["Python", "TensorFlow", "Pandas"],
+      team_size: 4,
+      deadline: "Feb 15, 2026",
+      creator_id: 1,
+      status: "open",
+    },
+    {
+      id: "CEP-M3N8",
+      title: "Campus Event Portal",
+      description: "Full-stack web app for managing university events with real-time notifications",
+      required_skills: ["React", "Node.js", "MongoDB"],
+      team_size: 5,
+      deadline: "Mar 1, 2026",
+      creator_id: 1,
+      status: "open",
+    },
+    {
+      id: "DVD-P5Q1",
+      title: "Data Visualization Dashboard",
+      description: "Interactive dashboard for visualizing COVID-19 data trends across regions",
+      required_skills: ["D3.js", "SQL", "Python"],
+      team_size: 3,
+      deadline: "Feb 28, 2026",
+      creator_id: 1,
+      status: "open",
+    },
+  ];
+
+  // Fallback demo matches
+  const recentMatches = students.length > 0 
+    ? students.map((s) => ({
+        name: s.name,
+        skill: s.skills[0]?.name ? `${s.skills[0].name} Expert` : "Developer",
+        compatibility: Math.round(s.skills.reduce((acc, sk) => acc + sk.level, 0) / Math.max(s.skills.length, 1)),
+      }))
+    : [
+        { name: "Priya Gupta", skill: "Python Expert", compatibility: 94 },
+        { name: "Rahul Verma", skill: "React Developer", compatibility: 89 },
+        { name: "Sneha Patel", skill: "ML Specialist", compatibility: 87 },
+      ];
+
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
       {/* Hero Section */}
@@ -111,34 +164,42 @@ export const Dashboard = () => {
 
       {/* Stats Grid */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-        <StatCard
-          icon={<Users className="w-6 h-6" />}
-          label="Total Students"
-          value="245"
-          trend={{ value: 12, positive: true }}
-          delay={0.1}
-        />
-        <StatCard
-          icon={<FolderOpen className="w-6 h-6" />}
-          label="Projects Live"
-          value="12"
-          trend={{ value: 8, positive: true }}
-          delay={0.2}
-        />
-        <StatCard
-          icon={<GitMerge className="w-6 h-6" />}
-          label="Matches Made"
-          value="156"
-          trend={{ value: 23, positive: true }}
-          delay={0.3}
-        />
-        <StatCard
-          icon={<TrendingUp className="w-6 h-6" />}
-          label="Success Rate"
-          value="94%"
-          trend={{ value: 5, positive: true }}
-          delay={0.4}
-        />
+        {loading ? (
+          <div className="col-span-4 flex justify-center py-8">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        ) : (
+          <>
+            <StatCard
+              icon={<Users className="w-6 h-6" />}
+              label="Total Students"
+              value={stats?.total_students?.toString() || "0"}
+              trend={{ value: 12, positive: true }}
+              delay={0.1}
+            />
+            <StatCard
+              icon={<FolderOpen className="w-6 h-6" />}
+              label="Projects Live"
+              value={stats?.active_projects?.toString() || "0"}
+              trend={{ value: 8, positive: true }}
+              delay={0.2}
+            />
+            <StatCard
+              icon={<GitMerge className="w-6 h-6" />}
+              label="Matches Made"
+              value={stats?.total_matches?.toString() || "0"}
+              trend={{ value: 23, positive: true }}
+              delay={0.3}
+            />
+            <StatCard
+              icon={<TrendingUp className="w-6 h-6" />}
+              label="Avg Compatibility"
+              value={`${stats?.avg_team_compatibility || 0}%`}
+              trend={{ value: 5, positive: true }}
+              delay={0.4}
+            />
+          </>
+        )}
       </section>
 
       {/* Featured Projects & Recent Matches */}
@@ -161,7 +222,7 @@ export const Dashboard = () => {
           </div>
 
           <div className="space-y-4">
-            {featuredProjects.map((project, index) => (
+            {displayProjects.map((project, index) => (
               <GlassCard
                 key={project.id}
                 initial={{ opacity: 0, x: -20 }}
@@ -176,7 +237,7 @@ export const Dashboard = () => {
                       {project.description}
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      {project.skills.map((skill) => (
+                      {project.required_skills.map((skill) => (
                         <SkillBadge key={skill} skill={skill} level="good" />
                       ))}
                     </div>
@@ -184,7 +245,7 @@ export const Dashboard = () => {
                   <div className="flex flex-row lg:flex-col items-center lg:items-end gap-4 lg:gap-2 text-sm">
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Users className="w-4 h-4" />
-                      <span>{project.spots} spots left</span>
+                      <span>{project.team_size} members</span>
                     </div>
                     <span className="text-muted-foreground">{project.deadline}</span>
                     <Button size="sm" variant="outline" className="text-primary border-primary/30 hover:bg-primary/10">

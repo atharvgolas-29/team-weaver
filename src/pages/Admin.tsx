@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Shield, Users, GitMerge, TrendingUp, BarChart3, RefreshCw, AlertTriangle } from "lucide-react";
+import { Shield, Users, GitMerge, TrendingUp, BarChart3, RefreshCw, AlertTriangle, Loader2 } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { StatCard } from "@/components/ui/StatCard";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
+import { getStats, getTeams, getProjects, getStudents, type Stats, type Team, type Project } from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
 
 const matchData = [
   { week: "W1", success: 85, total: 20 },
@@ -17,22 +19,6 @@ const matchData = [
   { week: "W6", success: 96, total: 40 },
 ];
 
-const skillDistribution = [
-  { skill: "Python", count: 89, color: "#06b6d4" },
-  { skill: "React", count: 76, color: "#a855f7" },
-  { skill: "Java", count: 65, color: "#22c55e" },
-  { skill: "SQL", count: 58, color: "#f59e0b" },
-  { skill: "ML/AI", count: 45, color: "#ef4444" },
-];
-
-const recentMatches = [
-  { id: 1, project: "ML Stock Predictor", members: 4, score: 94, status: "active" },
-  { id: 2, project: "Campus Event Portal", members: 5, score: 89, status: "pending" },
-  { id: 3, project: "Data Viz Dashboard", members: 3, score: 87, status: "active" },
-  { id: 4, project: "IoT Weather Station", members: 4, score: 82, status: "conflict" },
-  { id: 5, project: "E-Commerce Platform", members: 5, score: 91, status: "active" },
-];
-
 const teamBalanceData = [
   { name: "Balanced", value: 65, color: "#22c55e" },
   { name: "Slightly Imbalanced", value: 25, color: "#f59e0b" },
@@ -40,7 +26,106 @@ const teamBalanceData = [
 ];
 
 export const Admin = () => {
+  const { toast } = useToast();
   const [selectedMatch, setSelectedMatch] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [skillDistribution, setSkillDistribution] = useState([
+    { skill: "Python", count: 89, color: "#06b6d4" },
+    { skill: "React", count: 76, color: "#a855f7" },
+    { skill: "Java", count: 65, color: "#22c55e" },
+    { skill: "SQL", count: 58, color: "#f59e0b" },
+    { skill: "ML/AI", count: 45, color: "#ef4444" },
+  ]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [statsData, teamsData, projectsData, studentsData] = await Promise.all([
+        getStats(),
+        getTeams(),
+        getProjects(),
+        getStudents(),
+      ]);
+      
+      setStats(statsData);
+      setTeams(teamsData);
+      setProjects(projectsData);
+
+      // Calculate skill distribution from students
+      const skillCounts: Record<string, number> = {};
+      studentsData.forEach((student) => {
+        student.skills.forEach((skill) => {
+          skillCounts[skill.name] = (skillCounts[skill.name] || 0) + 1;
+        });
+      });
+
+      const colors = ["#06b6d4", "#a855f7", "#22c55e", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6"];
+      const distribution = Object.entries(skillCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([skill, count], idx) => ({
+          skill,
+          count,
+          color: colors[idx % colors.length],
+        }));
+
+      if (distribution.length > 0) {
+        setSkillDistribution(distribution);
+      }
+    } catch (error) {
+      console.error("Failed to fetch admin data:", error);
+      toast({
+        title: "Connection Error",
+        description: "Using demo analytics data.",
+        variant: "destructive",
+      });
+      // Keep default demo data
+      setStats({
+        total_students: 245,
+        active_projects: 12,
+        total_teams: 156,
+        total_matches: 156,
+        avg_team_compatibility: 94,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Build recent matches from teams and projects
+  const recentMatches = teams.length > 0
+    ? teams.slice(0, 5).map((team, idx) => {
+        const project = projects.find((p) => p.id === team.project_id);
+        return {
+          id: team.id || idx + 1,
+          project: project?.title || team.project_id,
+          members: team.members.length,
+          score: Math.round(team.compatibility_score),
+          status: team.compatibility_score >= 85 ? "active" : team.compatibility_score >= 70 ? "pending" : "conflict",
+        };
+      })
+    : [
+        { id: 1, project: "ML Stock Predictor", members: 4, score: 94, status: "active" },
+        { id: 2, project: "Campus Event Portal", members: 5, score: 89, status: "pending" },
+        { id: 3, project: "Data Viz Dashboard", members: 3, score: 87, status: "active" },
+        { id: 4, project: "IoT Weather Station", members: 4, score: 82, status: "conflict" },
+        { id: 5, project: "E-Commerce Platform", members: 5, score: 91, status: "active" },
+      ];
+
+  if (loading) {
+    return (
+      <div className="p-6 lg:p-8 max-w-7xl mx-auto flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
@@ -65,29 +150,29 @@ export const Admin = () => {
         <StatCard
           icon={<Users className="w-6 h-6" />}
           label="Active Students"
-          value="245"
+          value={stats?.total_students?.toString() || "0"}
           trend={{ value: 12, positive: true }}
           delay={0.1}
         />
         <StatCard
           icon={<GitMerge className="w-6 h-6" />}
           label="Total Matches"
-          value="156"
+          value={stats?.total_matches?.toString() || "0"}
           trend={{ value: 18, positive: true }}
           delay={0.2}
         />
         <StatCard
           icon={<TrendingUp className="w-6 h-6" />}
           label="Success Rate"
-          value="94%"
+          value={`${stats?.avg_team_compatibility || 0}%`}
           trend={{ value: 3, positive: true }}
           delay={0.3}
         />
         <StatCard
           icon={<BarChart3 className="w-6 h-6" />}
-          label="Avg Balance Score"
-          value="8.7"
-          trend={{ value: 0.5, positive: true }}
+          label="Active Projects"
+          value={stats?.active_projects?.toString() || "0"}
+          trend={{ value: 2, positive: true }}
           delay={0.4}
         />
       </section>
@@ -216,7 +301,12 @@ export const Admin = () => {
         <GlassCard>
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-lg font-semibold">Recent Matches</h3>
-            <Button variant="outline" size="sm" className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex items-center gap-2"
+              onClick={fetchData}
+            >
               <RefreshCw className="w-4 h-4" />
               Refresh
             </Button>

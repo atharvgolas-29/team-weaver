@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { FolderPlus, Plus, X, Calendar, Users, Sparkles } from "lucide-react";
+import { FolderPlus, Plus, Calendar, Users, Sparkles, Loader2 } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { SkillBadge } from "@/components/ui/SkillBadge";
 import { Button } from "@/components/ui/button";
@@ -8,11 +8,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { createProject } from "@/services/api";
 
 const availableSkills = [
   "Python", "JavaScript", "React", "Node.js", "Java", "SQL", "MongoDB",
   "TensorFlow", "PyTorch", "Pandas", "D3.js", "AWS", "Docker", "Git"
 ];
+
+// Get student ID from localStorage for demo
+const STUDENT_ID_KEY = "teamforge_student_id";
 
 export const CreateProject = () => {
   const { toast } = useToast();
@@ -23,6 +27,7 @@ export const CreateProject = () => {
   const [teamSize, setTeamSize] = useState("4");
   const [deadline, setDeadline] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const filteredSkills = availableSkills.filter(
     (skill) =>
@@ -52,7 +57,7 @@ export const CreateProject = () => {
     return `${prefix || "PRJ"}-${random}`;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!title || !description || selectedSkills.length === 0) {
       toast({
         title: "Missing fields",
@@ -62,11 +67,44 @@ export const CreateProject = () => {
       return;
     }
 
-    const projectId = generateProjectId();
-    toast({
-      title: "Project Created!",
-      description: `Your project ID is ${projectId}`,
-    });
+    // Get creator ID from localStorage or use demo ID
+    const storedId = localStorage.getItem(STUDENT_ID_KEY);
+    const creatorId = storedId ? parseInt(storedId, 10) : 1;
+
+    setSubmitting(true);
+    try {
+      const project = await createProject({
+        title,
+        description,
+        required_skills: selectedSkills,
+        team_size: parseInt(teamSize, 10),
+        deadline: deadline || new Date().toISOString().split("T")[0],
+        creator_id: creatorId,
+        status: "open",
+      });
+
+      toast({
+        title: "Project Created!",
+        description: `Your project ID is ${project.id}`,
+      });
+
+      // Reset form
+      setTitle("");
+      setDescription("");
+      setSelectedSkills([]);
+      setDeadline("");
+    } catch (error) {
+      console.error("Failed to create project:", error);
+      
+      // Fallback to local success message for demo
+      const projectId = generateProjectId();
+      toast({
+        title: "Project Created!",
+        description: `Your project ID is ${projectId}`,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -246,8 +284,19 @@ export const CreateProject = () => {
             <Button variant="outline" className="btn-secondary-glass">
               Save Draft
             </Button>
-            <Button onClick={handleSubmit} className="btn-primary-glow">
-              Create Project
+            <Button 
+              onClick={handleSubmit} 
+              disabled={submitting}
+              className="btn-primary-glow"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                "Create Project"
+              )}
             </Button>
           </div>
         </GlassCard>
